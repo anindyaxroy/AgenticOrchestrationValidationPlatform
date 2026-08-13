@@ -1,0 +1,32 @@
+# --- Secrets: never commit these ---
+.env
+.env.*
+!.env.example
+nginx/.htpasswd
+*.pem
+*.key
+cloudflared/
+.ngrok2/
+
+# --- Runtime data / generated state ---
+data/
+backend/data/
+*.log
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+
+# --- Node / frontend build ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# --- OS / editor cruft ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
