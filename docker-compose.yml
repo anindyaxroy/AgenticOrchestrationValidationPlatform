@@ -1,0 +1,93 @@
+services:
+
+  db:
+    image: postgres:16-alpine
+    container_name: bpmn_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bpmn_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-bpmn_platform}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init_db.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL","pg_isready -U ${POSTGRES_USER:-bpmn_user} -d ${POSTGRES_DB:-bpmn_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [bpmn_net]
+
+  redis:
+    image: redis:7-alpine
+    container_name: bpmn_redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD","redis-cli","ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    networks: [bpmn_net]
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: bpmn_backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bpmn_user}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@db:5432/${POSTGRES_DB:-bpmn_platform}
+      REDIS_URL: redis://redis:6379/0
+      SECRET_KEY: ${SECRET_KEY:?SECRET_KEY must be set in .env}
+      ENVIRONMENT: development
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CHROMA_DIR: /app/data/chroma
+      RUN_LOG_DIR: /app/data/runs
+      UPLOAD_DIR: /app/data/uploads
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD","curl","-f","http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks: [bpmn_net]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: bpmn_frontend
+    restart: unless-stopped
+    depends_on: [backend]
+    networks: [bpmn_net]
+
+  nginx:
+    image: nginx:alpine
+    container_name: bpmn_nginx
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      # Uncomment the line below together with the auth_basic directives
+      # in nginx/nginx.conf to enable Basic Auth for restricted external
+      # access. nginx/.htpasswd is gitignored -- generate it locally,
+      # never commit it. See USAGE.md.
+      # - ./nginx/.htpasswd:/etc/nginx/.htpasswd:ro
+    depends_on: [backend, frontend]
+    networks: [bpmn_net]
+
+volumes:
+  postgres_data:
+
+networks:
+  bpmn_net:
+    driver: bridge
